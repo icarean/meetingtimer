@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en-UK">
+<meta charset="UTF-8">
+<head>
+
+<title>ISO meeting contribution timer</title>
+
+<!-- Serah Allison 2024 -->
+
+<!--
+  Some notes on this app's behaviour:
+    * When you first load the app, your screen will time out as usual. Once you press the "start" button, the app plays a small video in the hope your browser will keep the screen on.
+    * Vibration functionality varies between devices
+-->
+
+
+<!-- Prevent zoom in/out on Android -->
+<!-- CHANGED 13/03/2024: changed device-width to 100vw -->
+<meta name="viewport" content="width=100vw, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+</head>
+</html>
+
+
+<style>
+body {
+  background-color : darkslategray;
+  color : white;
+}
+/* A container to centre everything */
+.everythingContainer {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin-right: -50%;
+  transform: translate(-50%, -50%);
+}
+#currentTime {
+  font-size: 4em;
+  font-family: sans-serif;
+  text-align: center;
+}
+#stopwatch {
+  font-size: 10em;
+  font-family: sans-serif;
+  text-align: center;
+}
+.centre {
+  margin-left: auto;
+  margin-right: auto;
+}
+.preWarning {
+  background-color : orange;
+}
+.overTime {
+  background-color : red;
+}
+button {
+  font-size : 2em;
+  padding : 0;
+  width: 5em;
+  margin : 3vw;
+  text-align:center;
+}
+.unavailable {
+  opacity : 0.3;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(0, 0, 0, 0.2),
+    rgba(0, 0, 0, 0.2) 10px,
+    rgba(0, 0, 0, 0.3) 10px,
+    rgba(0, 0, 0, 0.3) 20px
+    ),
+    grey;
+}
+td {
+  text-align : right;
+}
+input {
+  width : 5em;
+}
+</style>
+
+<html>
+<div class="everythingContainer">
+<div id="currentTime"></div>
+<br />
+<div id="stopwatch"></div>
+<br />
+<table class="centre"><tr>
+  <td><button id="startStopContinue" onclick="startStopContinueButton();">Start</button></td>
+  <td><button id="reset">Reset</button></td>
+</tr></table>
+<br /> <br /><br />
+<table>
+  <tr><td>Contribution length (mins): </td><td><input id="maxContributionMins" type=number value=3 min=0 onchange="updateMaxContributionTimeVariable();"></input></td></tr>
+  <tr><td>Warning (secs): </td><td><input id="preWarning" type=number value=30 min=0 onchange="updatePreWarningVariable();"></input></td></tr>
+</table>
+</div>
+
+<!-- Hack to prevent the screen from timing out: play a 2x2 video at the end of the webpage -->
+<!-- For Chrome and Chrome derivatives (Samsung Internet) the video must be on screen to keep the screen on, so put it in the middle of the app area the user is most likely to need to remain on -->
+<!-- Generated from a short phonecamera video using ffmpeg -i 20210421_163133.mp4 -vf scale=2:2 -strict -2 keepScreenOnVideo.mp4 -->
+<!-- The height:2px is important for Chrome, which will otherwise enlarge the video -->
+<video id="keepScreenOnVideo" src="keepScreenOnVideo.mp4" style="height:2px; float:left; filter:opacity(0%);" webkit-playsinline playsinline></video>
+
+
+
+</html>
+
+
+<script type="text/javascript">
+
+function videoLoopFunction() {
+  keepScreenOnVideo.currentTime=0;
+  keepScreenOnVideo.play();
+}
+
+// Video play hack to keep screen on
+function keepScreenOn() {
+  if (typeof keepScreenOnVideo.loop == 'boolean') {
+    keepScreenOnVideo.loop=true;
+  } else {
+    keepScreenOnVideo.addEventListener('ended',videoLoopFunction(),false);
+  }
+  setTimeout(() => { keepScreenOnVideo.play(); keepScreenOnVideo.muted=true; },1000)  // Play after a short delay, otherwise it won't play at all
+}
+
+function displayTime() {
+  // CHANGED 13/03/2024: Changed currentTimeFull to currentTime, and .toLocateTimeString() to .toLocaleString(options)
+  var currentTime = new Date().toLocaleString("en-NZ", {"timeStyle":"short"});
+  // CHANGED 13/03/2024: No longer reformatting the time output from .toLocaleTimeString()
+  // var timeArray = currentTimeFull.split(":");
+  // var currentTimeHrMin = timeArray[0] + ":" + timeArray[1] + " " + currentTimeFull.substr(currentTimeFull.length-2, 2);
+  // document.getElementById("currentTime").innerHTML = currentTimeHrMin;
+  document.getElementById("currentTime").innerHTML = currentTime;
+}
+
+// Pad to 2 digits
+function pad2(number) {
+  return (number<10?'0':'')+number
+}
+
+// Returns the stopwatch time passed since last reset in milliseconds
+function getStopwatchTimeSinceLastStart() {
+  return Date.now() - stopwatchLatestStartTime;
+}
+
+// Returns the stopwatch time passed since last reset in milliseconds
+function getStopwatchTotalTime() {
+  if (stopwatchInterval) {
+    return getStopwatchTimeSinceLastStart() + stopwatchStoredTime;
+  } else {
+    return stopwatchStoredTime;
+  }
+}
+
+function alertWarning() {
+  if (!hasNotifiedWarning) {
+    document.getElementById("stopwatch").classList.add("preWarning");
+    navigator.vibrate([200, 30, 200]);
+    setTimeout(() => {
+      navigator.vibrate(0);
+    }, 500);  // Stop the vibration after half a second
+    hasNotifiedWarning = 1;
+  }
+}
+
+function alertOvertime() {
+  if (!hasNotifiedOvertime) {
+    document.getElementById("stopwatch").classList.add("overTime");
+    navigator.vibrate([500, 30, 500, 30, 500]);
+    setTimeout(() => {
+      navigator.vibrate(0);
+    }, 2000);  // Stop the vibration after two seconds
+    hasNotifiedOvertime = 1;
+  }
+}
+
+function displayStopwatch() {
+  var totalSecondsPassed = Math.floor(getStopwatchTotalTime() / 1000);
+  var minsPassed = Math.floor(totalSecondsPassed / 60) % 60;
+  var secondsPassed = totalSecondsPassed % 60;
+  document.getElementById("stopwatch").innerHTML = pad2(minsPassed) + ":" + pad2(secondsPassed);
+  if (totalSecondsPassed >= maxContributionTime) {
+    alertOvertime();
+  } else if (totalSecondsPassed >= (maxContributionTime - preWarning)) {
+    alertWarning();
+  }
+}
+
+function resetStopwatch() {
+  document.getElementById("stopwatch").classList.remove("preWarning");
+  document.getElementById("stopwatch").classList.remove("overTime");
+  stopwatchStoredTime = 0;
+  displayStopwatch();
+  makeResetButtonUnavailable();
+  document.getElementById("startStopContinue").innerHTML = "Start";
+  hasNotifiedWarning = 0;
+  hasNotifiedOvertime = 0;
+}
+
+function makeResetButtonAvailable() {
+  document.getElementById("reset").classList.remove("unavailable");
+  document.getElementById("reset").setAttribute("onclick", "resetStopwatch();");
+}
+
+function makeResetButtonUnavailable() {
+  document.getElementById("reset").classList.add("unavailable");
+  document.getElementById("reset").setAttribute("onclick", "");
+}
+
+
+function startStopContinueButton() {
+  if (stopwatchInterval) {
+    // Pause the stopwatch
+    stopwatchInterval = null;
+    stopwatchStoredTime += getStopwatchTimeSinceLastStart();
+    document.getElementById("startStopContinue").innerHTML = "Continue";
+    makeResetButtonAvailable();
+  } else {
+    // Start or continue the stopwatch
+    stopwatchLatestStartTime = Date.now();
+    stopwatchInterval = setInterval(displayStopwatch, 1000);
+    document.getElementById("startStopContinue").innerHTML = "Stop";
+    makeResetButtonUnavailable();
+    if (notStartedYet) {
+      notStartedYet = 0;
+      keepScreenOn();
+    }
+  }
+}
+
+function updateMaxContributionTimeVariable() {
+  maxContributionTime = document.getElementById("maxContributionMins").value * 60;
+  document.getElementById("stopwatch").classList.remove("preWarning");
+  document.getElementById("stopwatch").classList.remove("overTime");
+}
+
+function updatePreWarningVariable() {
+  preWarning = document.getElementById("preWarning").value;
+  document.getElementById("stopwatch").classList.remove("preWarning");
+  document.getElementById("stopwatch").classList.remove("overTime");
+}
+
+// Global variables
+var stopwatchStoredTime = 0;
+var stopwatchLatestStartTime;
+var stopwatchInterval;         // Interval event (function call) for stopwatch
+var maxContributionTime;   updateMaxContributionTimeVariable();
+var preWarning;            updatePreWarningVariable();
+var keepScreenOnVideo = document.getElementById("keepScreenOnVideo");
+var notStartedYet = 1;
+var hasNotifiedWarning;        // Used to ensure vibration happens just once
+var hasNotifiedOvertime;       // Used to ensure vibration happens just once
+
+displayTime();
+resetStopwatch();
+
+var currentTimeInterval = setInterval(displayTime, 5000);
+</script>
